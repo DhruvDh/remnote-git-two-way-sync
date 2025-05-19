@@ -1,9 +1,20 @@
-import { declareIndexPlugin, ReactRNPlugin, WidgetLocation } from '@remnote/plugin-sdk';
+import {
+  declareIndexPlugin,
+  ReactRNPlugin,
+  WidgetLocation,
+} from '@remnote/plugin-sdk';
+import {
+  pushCardById,
+  deleteCardFile,
+  processFailedQueue,
+  loadShaMap,
+} from '../github/sync';
 import '../style.css';
 import '../App.css';
 
-// Timer reference for cleanup on deactivation
+// Timer references for cleanup on deactivation
 let syncInterval: ReturnType<typeof setInterval> | undefined;
+let retryInterval: ReturnType<typeof setInterval> | undefined;
 
 async function onActivate(plugin: ReactRNPlugin) {
   // Register GitHub sync settings
@@ -69,16 +80,32 @@ async function onActivate(plugin: ReactRNPlugin) {
   });
 
   // Listen for Rem changes to detect flashcard edits
-  await plugin.event.addListener('RemChanged', 'sync-rem-changed', (payload) => {
-    console.log('RemChanged event', payload);
+  await plugin.event.addListener('RemChanged', 'sync-rem-changed', async ({ remId }) => {
+    if (!remId) return;
+    const rem = await plugin.rem.findOne(remId);
+    if (!rem) return;
+    const cards = await rem.getCards();
+    const currentIds = cards.map((c) => c._id);
+    for (const id of currentIds) {
+      await pushCardById(plugin, id);
+    }
+    const shaMap = await loadShaMap(plugin);
+    for (const id of Object.keys(shaMap)) {
+      if (shaMap[id].remId === remId && !currentIds.includes(id)) {
+        await deleteCardFile(plugin, id);
+      }
+    }
   });
 
   // Listen for completed cards in the queue
   await plugin.event.addListener(
     'queue.complete-card',
     'sync-complete-card',
-    (payload) => {
-      console.log('Queue complete-card event', payload);
+    async (payload) => {
+      const cardId = payload?.cardId || (await plugin.queue.getCurrentCard())?._id;
+      if (cardId) {
+        await pushCardById(plugin, cardId);
+      }
     }
   );
 
@@ -91,6 +118,13 @@ async function onActivate(plugin: ReactRNPlugin) {
   syncInterval = setInterval(() => {
     console.log('Periodic timer fired');
   }, 60 * 1000);
+
+  retryInterval = setInterval(() => {
+    processFailedQueue(plugin);
+  }, 5 * 60 * 1000);
+
+  // kick off any queued pushes immediately on load
+  await processFailedQueue(plugin);
 }
 
 async function onDeactivate(plugin: ReactRNPlugin) {
@@ -101,6 +135,11 @@ async function onDeactivate(plugin: ReactRNPlugin) {
   if (syncInterval) {
     clearInterval(syncInterval);
     syncInterval = undefined;
+  }
+
+  if (retryInterval) {
+    clearInterval(retryInterval);
+    retryInterval = undefined;
   }
 }
 
