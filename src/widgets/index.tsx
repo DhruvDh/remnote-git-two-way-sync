@@ -1,4 +1,9 @@
-import { declareIndexPlugin, ReactRNPlugin, WidgetLocation } from '@remnote/plugin-sdk';
+import {
+  declareIndexPlugin,
+  ReactRNPlugin,
+  WidgetLocation,
+} from '@remnote/plugin-sdk';
+import { pullUpdates } from '../github/pull';
 import '../style.css';
 import '../App.css';
 
@@ -60,6 +65,14 @@ async function onActivate(plugin: ReactRNPlugin) {
     },
   });
 
+  await plugin.app.registerCommand({
+    id: 'github-pull-now',
+    name: 'GitHub Sync Pull',
+    action: async () => {
+      await pullUpdates(plugin);
+    },
+  });
+
   // Show a toast notification to the user.
   await plugin.app.toast("I'm a toast!");
 
@@ -87,10 +100,9 @@ async function onActivate(plugin: ReactRNPlugin) {
     console.log('Queue load-card event', payload);
   });
 
-  // Basic timer to demonstrate cleanup
   syncInterval = setInterval(() => {
-    console.log('Periodic timer fired');
-  }, 60 * 1000);
+    pullUpdates(plugin);
+  }, 5 * 60 * 1000);
 }
 
 async function onDeactivate(plugin: ReactRNPlugin) {
