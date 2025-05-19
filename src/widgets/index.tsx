@@ -3,23 +3,49 @@ import '../style.css';
 import '../App.css';
 
 async function onActivate(plugin: ReactRNPlugin) {
-  // Register settings
+  // Register GitHub sync settings
   await plugin.settings.registerStringSetting({
-    id: 'name',
-    title: 'What is your Name?',
-    defaultValue: 'Bob',
+    id: 'github-token',
+    title: 'GitHub Personal Access Token',
+    description:
+      'Token with repo access used for authentication when syncing.',
+    defaultValue: '',
+  });
+
+  await plugin.settings.registerStringSetting({
+    id: 'github-repo',
+    title: 'Repository (owner/repo)',
+    description: 'Example: username/repo',
+    defaultValue: '',
+  });
+
+  await plugin.settings.registerStringSetting({
+    id: 'github-branch',
+    title: 'Branch name',
+    description: 'Branch of the repository to use for sync',
+    defaultValue: 'main',
+  });
+
+  await plugin.settings.registerStringSetting({
+    id: 'github-subdir',
+    title: 'Cards subdirectory',
+    description:
+      'Optional folder inside the repo where flashcard files are stored',
+    defaultValue: '',
   });
 
   await plugin.settings.registerBooleanSetting({
-    id: 'pizza',
-    title: 'Do you like pizza?',
+    id: 'auto-push',
+    title: 'Enable auto-push',
+    description: 'Automatically push local changes to GitHub',
     defaultValue: true,
   });
 
-  await plugin.settings.registerNumberSetting({
-    id: 'favorite-number',
-    title: 'What is your favorite number?',
-    defaultValue: 42,
+  await plugin.settings.registerBooleanSetting({
+    id: 'auto-pull',
+    title: 'Enable auto-pull',
+    description: 'Automatically pull updates from GitHub',
+    defaultValue: true,
   });
 
   // A command that inserts text into the editor if focused.
