@@ -1,6 +1,11 @@
-import { ReactRNPlugin } from '@remnote/plugin-sdk';
-import { serializeCard, SimpleCard, SimpleRem } from './markdown';
-import { createOrUpdateFile, deleteFile } from './api';
+import { ReactRNPlugin, BuiltInPowerupCodes } from '@remnote/plugin-sdk';
+import {
+  serializeCard,
+  SimpleCard,
+  SimpleRem,
+  parseCardMarkdown,
+} from './markdown';
+import { createOrUpdateFile, deleteFile, getFile, listFiles } from './api';
 
 interface ShaEntry {
   sha: string;
@@ -98,4 +103,138 @@ export async function processFailedQueue(plugin: ReactRNPlugin) {
   for (const cardId of [...queue]) {
     await pushCardById(plugin, cardId);
   }
+}
+
+export async function pullUpdates(plugin: ReactRNPlugin) {
+  const subdir = (await plugin.settings.getSetting<string>('github-subdir')) || '';
+  const shaMap = await loadShaMap(plugin);
+
+  const { ok, files } = await listFiles(plugin, subdir);
+  if (!ok || !files) {
+    console.error('Failed to list files from GitHub');
+    return;
+  }
+
+  const seen = new Set<string>();
+
+  for (const file of files) {
+    const id = file.path.split('/').pop()?.replace(/\.md$/, '');
+    if (!id) continue;
+    seen.add(id);
+    const entry = shaMap[id];
+    if (!entry || entry.sha !== file.sha) {
+      const res = await getFile(plugin, file.path);
+      if (!res.ok || !res.data) continue;
+      const parsed = parseCardMarkdown(res.data.content);
+
+      let card = await plugin.card.findOne(parsed.cardId);
+      let rem = card ? await card.getRem() : undefined;
+
+      if (!rem) {
+        rem = await plugin.rem.createRem();
+        if (!rem) continue;
+        await rem.setText(await plugin.richText.parseFromMarkdown(parsed.question));
+        await rem.setBackText(await plugin.richText.parseFromMarkdown(parsed.answer));
+
+        for (const tagName of parsed.tags) {
+          const tagText = await plugin.richText.parseFromMarkdown(tagName);
+          let tagRem = await plugin.rem.findByName(tagText, null);
+          if (!tagRem) {
+            tagRem = await plugin.rem.createRem();
+            await tagRem.addPowerup(BuiltInPowerupCodes.UsedAsTag);
+            await tagRem.setText(tagText);
+          }
+          await rem.addTag(tagRem);
+        }
+
+        const cards = await rem.getCards();
+        card = cards.find((c) => c._id === parsed.cardId) || cards[0];
+      } else {
+        await rem.setText(await plugin.richText.parseFromMarkdown(parsed.question));
+        await rem.setBackText(await plugin.richText.parseFromMarkdown(parsed.answer));
+
+        const currentTags = await rem.getTagRems();
+        const currentNames = await Promise.all(
+          currentTags.map(async (t) => (t.text ? await plugin.richText.toString(t.text) : ''))
+        );
+
+        for (const tagName of parsed.tags) {
+          if (!currentNames.includes(tagName)) {
+            const tagText = await plugin.richText.parseFromMarkdown(tagName);
+            let tagRem = await plugin.rem.findByName(tagText, null);
+            if (!tagRem) {
+              tagRem = await plugin.rem.createRem();
+              await tagRem.addPowerup(BuiltInPowerupCodes.UsedAsTag);
+              await tagRem.setText(tagText);
+            }
+            await rem.addTag(tagRem);
+          }
+        }
+
+        for (let i = 0; i < currentTags.length; i++) {
+          if (!parsed.tags.includes(currentNames[i])) {
+            await rem.removeTag(currentTags[i]._id);
+          }
+        }
+      }
+
+      if (card) {
+        if (parsed.nextDue) {
+          try {
+            (card as any).nextRepetitionTime = Date.parse(parsed.nextDue);
+          } catch {
+            /* ignored */
+          }
+        }
+        if (parsed.lastReviewed) {
+          try {
+            (card as any).lastRepetitionTime = Date.parse(parsed.lastReviewed);
+          } catch {
+            /* ignored */
+          }
+        }
+        if (parsed.difficulty !== null && parsed.difficulty !== undefined) {
+          (card as any).difficulty = parsed.difficulty;
+        }
+        if (parsed.stability !== null && parsed.stability !== undefined) {
+          (card as any).stability = parsed.stability;
+        }
+      }
+
+      shaMap[id] = { sha: file.sha, remId: rem._id };
+    }
+  }
+
+  for (const id of Object.keys(shaMap)) {
+    if (!seen.has(id)) {
+      const card = await plugin.card.findOne(id);
+      if (!card) {
+        delete shaMap[id];
+        continue;
+      }
+      const rem = await card.getRem();
+      if (!rem) {
+        delete shaMap[id];
+        continue;
+      }
+
+      const remove = window.confirm(`File for card ${id} deleted on GitHub. Remove locally?`);
+      if (remove) {
+        await rem.remove();
+        delete shaMap[id];
+      } else {
+        const tagText = await plugin.richText.parseFromMarkdown('Archived');
+        let tagRem = await plugin.rem.findByName(tagText, null);
+        if (!tagRem) {
+          tagRem = await plugin.rem.createRem();
+          await tagRem.addPowerup(BuiltInPowerupCodes.UsedAsTag);
+          await tagRem.setText(tagText);
+        }
+        await rem.addTag(tagRem);
+        delete shaMap[id];
+      }
+    }
+  }
+
+  await saveShaMap(plugin, shaMap);
 }
