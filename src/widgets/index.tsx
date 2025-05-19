@@ -8,6 +8,7 @@ import {
   deleteCardFile,
   processFailedQueue,
   loadShaMap,
+  pullUpdates,
 } from '../github/sync';
 import '../style.css';
 import '../App.css';
@@ -15,6 +16,7 @@ import '../App.css';
 // Timer references for cleanup on deactivation
 let syncInterval: ReturnType<typeof setInterval> | undefined;
 let retryInterval: ReturnType<typeof setInterval> | undefined;
+let pullInterval: ReturnType<typeof setInterval> | undefined;
 
 async function onActivate(plugin: ReactRNPlugin) {
   // Register GitHub sync settings
@@ -71,6 +73,14 @@ async function onActivate(plugin: ReactRNPlugin) {
     },
   });
 
+  await plugin.app.registerCommand({
+    id: 'github-pull',
+    name: 'GitHub: Pull Updates',
+    action: async () => {
+      await pullUpdates(plugin);
+    },
+  });
+
   // Show a toast notification to the user.
   await plugin.app.toast("I'm a toast!");
 
@@ -123,6 +133,14 @@ async function onActivate(plugin: ReactRNPlugin) {
     processFailedQueue(plugin);
   }, 5 * 60 * 1000);
 
+  const autoPull = await plugin.settings.getSetting<boolean>('auto-pull');
+  if (autoPull) {
+    pullInterval = setInterval(() => {
+      pullUpdates(plugin);
+    }, 5 * 60 * 1000);
+    await pullUpdates(plugin);
+  }
+
   // kick off any queued pushes immediately on load
   await processFailedQueue(plugin);
 }
@@ -140,6 +158,11 @@ async function onDeactivate(plugin: ReactRNPlugin) {
   if (retryInterval) {
     clearInterval(retryInterval);
     retryInterval = undefined;
+  }
+
+  if (pullInterval) {
+    clearInterval(pullInterval);
+    pullInterval = undefined;
   }
 }
 
