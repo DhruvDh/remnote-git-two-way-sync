@@ -1,4 +1,8 @@
-import { usePlugin, renderWidget, useTracker } from '@remnote/plugin-sdk';
+import {
+  usePlugin,
+  renderWidget,
+  useTrackerPlugin as useTracker,
+} from '@remnote/plugin-sdk';
 
 export const SampleWidget = () => {
   const plugin = usePlugin();
