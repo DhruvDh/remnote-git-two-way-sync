@@ -7,8 +7,8 @@ This plugin synchronizes your RemNote flashcards with a GitHub repository. Each 
 - **Automatic push** – card edits, reviews and tag changes in RemNote are committed to GitHub.
 - **Automatic pull** – periodically fetches updates from GitHub and applies them to your knowledge base.
 - **Markdown format** – cards are saved as Markdown with YAML front‑matter including FSRS fields.
-- **Conflict handling** – basic conflict resolution with optional policies and conflict files.
-- **Settings** – configure repository, branch, subdirectory and whether auto push/pull is enabled.
+- **Conflict handling** – if a card is edited in both places the plugin creates a file in `conflicts/`, adds the card ID under a *Conflicts* document in your KB and shows a toast so you can resolve it manually.
+- **Settings** – configure repository, branch, subdirectory, slugged filenames and whether auto push/pull is enabled.
 - **Configurable intervals** – set how often auto-pull and retry timers run.
 
 ## Development Setup
@@ -47,6 +47,16 @@ The plugin requires a GitHub Personal Access Token (PAT) with access to the repo
 ### Security Notes
 
 Your PAT gives write access to the specified repository. Keep it secret and do not share knowledge bases containing this token. Be cautious if syncing to a public repository because your flashcard content and scheduling data will be publicly visible.
+
+## Conflict Notifications
+
+When a card is changed both in GitHub and RemNote, the plugin cannot automatically merge the edits. It will:
+
+1. Create a Markdown file under the `conflicts/` folder describing the two versions.
+2. Add the card's ID as a bullet in a document titled **Conflicts** inside your knowledge base.
+3. Show a toast notification informing you that manual resolution is required.
+
+Open the conflict file to decide which version to keep and update the card accordingly. Remove the entry from the *Conflicts* document once resolved.
 
 ## Known Limitations
 

@@ -82,6 +82,13 @@ async function onActivate(plugin: ReactRNPlugin) {
   });
 
   await plugin.settings.registerBooleanSetting({
+    id: 'use-slug-filenames',
+    title: 'Use slugs in file names',
+    description: 'Prefix files with a slug of the question text',
+    defaultValue: false,
+  });
+
+  await plugin.settings.registerBooleanSetting({
     id: 'auto-push',
     title: 'Enable auto-push',
     description: 'Automatically push local changes to GitHub',
