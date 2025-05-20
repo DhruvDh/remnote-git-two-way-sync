@@ -11,17 +11,23 @@ import { createOrUpdateFile, deleteFile, getFile, listFiles } from './api';
 interface ShaEntry {
   sha: string;
   remId: string;
+  timestamp: number;
 }
+export let fileShaMap: Record<string, ShaEntry> = {};
 
-const SHA_MAP_KEY = 'github-sha-map';
+const FILE_SHA_MAP_KEY = 'file-sha-map';
 const FAILED_QUEUE_KEY = 'github-failed-queue';
 
-export async function loadShaMap(plugin: ReactRNPlugin): Promise<Record<string, ShaEntry>> {
-  return (await plugin.storage.getSynced<Record<string, ShaEntry>>(SHA_MAP_KEY)) || {};
+export async function loadShaMap(plugin: ReactRNPlugin): Promise<void> {
+  const data = await plugin.storage.getSynced<Record<string, ShaEntry>>(FILE_SHA_MAP_KEY);
+  fileShaMap = data || {};
+  for (const id of Object.keys(fileShaMap)) {
+    fileShaMap[id].timestamp = fileShaMap[id].timestamp || Date.now();
+  }
 }
 
-export async function saveShaMap(plugin: ReactRNPlugin, map: Record<string, ShaEntry>): Promise<void> {
-  await plugin.storage.setSynced(SHA_MAP_KEY, map);
+export async function saveShaMap(plugin: ReactRNPlugin): Promise<void> {
+  await plugin.storage.setSynced(FILE_SHA_MAP_KEY, fileShaMap);
 }
 
 export async function loadFailedQueue(plugin: ReactRNPlugin): Promise<string[]> {
@@ -141,12 +147,10 @@ export async function pushCardById(plugin: ReactRNPlugin, cardId: string) {
   const content = serializeCard(simpleCard, simpleRem);
   const path = getPath(subdir, cardId);
 
-  const shaMap = await loadShaMap(plugin);
-  const shaEntry = shaMap[cardId];
+  const shaEntry = fileShaMap[cardId];
   const res = await createOrUpdateFile(plugin, path, content, shaEntry?.sha);
   if (res.ok && res.sha) {
-    shaMap[cardId] = { sha: res.sha, remId: rem._id };
-    await saveShaMap(plugin, shaMap);
+    fileShaMap[cardId] = { sha: res.sha, remId: rem._id, timestamp: Date.now() };
     const queue = await loadFailedQueue(plugin);
     const idx = queue.indexOf(cardId);
     if (idx !== -1) {
@@ -183,13 +187,19 @@ export async function pushCardById(plugin: ReactRNPlugin, cardId: string) {
       }
       if (useRemote) {
         await applyParsedToRem(plugin, parsed, rem, card);
-        shaMap[cardId] = { sha: remote.data.sha, remId: rem._id };
-        await saveShaMap(plugin, shaMap);
+        fileShaMap[cardId] = {
+          sha: remote.data.sha,
+          remId: rem._id,
+          timestamp: Date.now(),
+        };
       } else {
         const retry = await createOrUpdateFile(plugin, path, content, remote.data.sha);
         if (retry.ok && retry.sha) {
-          shaMap[cardId] = { sha: retry.sha, remId: rem._id };
-          await saveShaMap(plugin, shaMap);
+          fileShaMap[cardId] = {
+            sha: retry.sha,
+            remId: rem._id,
+            timestamp: Date.now(),
+          };
         } else {
           const queue = await loadFailedQueue(plugin);
           if (!queue.includes(cardId)) {
@@ -209,15 +219,13 @@ export async function pushCardById(plugin: ReactRNPlugin, cardId: string) {
 }
 
 export async function deleteCardFile(plugin: ReactRNPlugin, cardId: string) {
-  const shaMap = await loadShaMap(plugin);
-  const entry = shaMap[cardId];
+  const entry = fileShaMap[cardId];
   if (!entry) return;
   const subdir = (await plugin.settings.getSetting<string>('github-subdir')) || '';
   const path = getPath(subdir, cardId);
   const res = await deleteFile(plugin, path, entry.sha);
   if (res.ok) {
-    delete shaMap[cardId];
-    await saveShaMap(plugin, shaMap);
+    delete fileShaMap[cardId];
   }
 }
 
@@ -231,7 +239,6 @@ export async function processFailedQueue(plugin: ReactRNPlugin) {
 
 export async function pullUpdates(plugin: ReactRNPlugin) {
   const subdir = (await plugin.settings.getSetting<string>('github-subdir')) || '';
-  const shaMap = await loadShaMap(plugin);
 
   const { ok, files } = await listFiles(plugin, subdir);
   if (!ok || !files) {
@@ -245,7 +252,7 @@ export async function pullUpdates(plugin: ReactRNPlugin) {
     const id = file.path.split('/').pop()?.replace(/\.md$/, '');
     if (!id) continue;
     seen.add(id);
-    const entry = shaMap[id];
+    const entry = fileShaMap[id];
     if (!entry || entry.sha !== file.sha) {
       const res = await getFile(plugin, file.path);
       if (!res.ok || !res.data) continue;
@@ -395,27 +402,27 @@ export async function pullUpdates(plugin: ReactRNPlugin) {
         }
       }
 
-      shaMap[id] = { sha: file.sha, remId: rem._id };
+      fileShaMap[id] = { sha: file.sha, remId: rem._id, timestamp: Date.now() };
     }
   }
 
-  for (const id of Object.keys(shaMap)) {
+  for (const id of Object.keys(fileShaMap)) {
     if (!seen.has(id)) {
       const card = await plugin.card.findOne(id);
       if (!card) {
-        delete shaMap[id];
+        delete fileShaMap[id];
         continue;
       }
       const rem = await card.getRem();
       if (!rem) {
-        delete shaMap[id];
+        delete fileShaMap[id];
         continue;
       }
 
       const remove = window.confirm(`File for card ${id} deleted on GitHub. Remove locally?`);
       if (remove) {
         await rem.remove();
-        delete shaMap[id];
+        delete fileShaMap[id];
       } else {
         const tagText = await plugin.richText.parseFromMarkdown('Archived');
         let tagRem = await plugin.rem.findByName(tagText, null);
@@ -429,10 +436,9 @@ export async function pullUpdates(plugin: ReactRNPlugin) {
         if (tagRem) {
           await rem.addTag(tagRem);
         }
-        delete shaMap[id];
+        delete fileShaMap[id];
       }
     }
   }
 
-  await saveShaMap(plugin, shaMap);
 }
