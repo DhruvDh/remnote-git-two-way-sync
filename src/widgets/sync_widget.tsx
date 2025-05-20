@@ -1,15 +1,29 @@
-import { renderWidget, usePlugin, useTracker } from '@remnote/plugin-sdk';
+import {
+  renderWidget,
+  usePlugin,
+  useTrackerPlugin as useTracker,
+  ReactRNPlugin,
+} from '@remnote/plugin-sdk';
+import { useEffect } from 'react';
 import { syncNow } from '../github/sync';
+import { restartTimers } from './index';
 
 export const SyncWidget = () => {
   const plugin = usePlugin();
+  const reactPlugin = plugin as unknown as ReactRNPlugin;
   const status = useTracker(() => plugin.storage.getLocal<string>('sync-status') ?? 'Idle');
+  const pullMinutes = useTracker(() => plugin.settings.getSetting<number>('pull-interval') ?? 5);
+  const retryMinutes = useTracker(() => plugin.settings.getSetting<number>('retry-interval') ?? 5);
+
+  useEffect(() => {
+    restartTimers(reactPlugin);
+  }, [pullMinutes, retryMinutes]);
 
   const onClick = async () => {
     await plugin.storage.setLocal('sync-status', 'Syncing');
-    const success = await syncNow(plugin);
+    const success = await syncNow(reactPlugin);
     await plugin.storage.setLocal('sync-status', success ? 'Synced' : 'Error');
-    await plugin.app.toast(success ? 'Sync completed' : 'Sync failed', success ? 'info' : 'error');
+    await plugin.app.toast(success ? 'Sync completed' : 'Sync failed');
   };
 
   return (

@@ -22,6 +22,33 @@ let syncInterval: ReturnType<typeof setInterval> | undefined;
 let retryInterval: ReturnType<typeof setInterval> | undefined;
 let pullInterval: ReturnType<typeof setInterval> | undefined;
 
+export async function restartTimers(plugin: ReactRNPlugin) {
+  if (retryInterval) {
+    clearInterval(retryInterval);
+    retryInterval = undefined;
+  }
+  if (pullInterval) {
+    clearInterval(pullInterval);
+    pullInterval = undefined;
+  }
+
+  const retryMin =
+    (await plugin.settings.getSetting<number>('retry-interval')) ?? 5;
+  retryInterval = setInterval(() => {
+    processFailedQueue(plugin);
+  }, retryMin * 60 * 1000);
+
+  const autoPull = await plugin.settings.getSetting<boolean>('auto-pull');
+  if (autoPull) {
+    const pullMin =
+      (await plugin.settings.getSetting<number>('pull-interval')) ?? 5;
+    pullInterval = setInterval(() => {
+      pullUpdates(plugin);
+    }, pullMin * 60 * 1000);
+    await pullUpdates(plugin);
+  }
+}
+
 async function onActivate(plugin: ReactRNPlugin) {
   // Register GitHub sync settings
   await plugin.settings.registerStringSetting({
@@ -75,6 +102,20 @@ async function onActivate(plugin: ReactRNPlugin) {
     defaultValue: true,
   });
 
+  await plugin.settings.registerNumberSetting({
+    id: 'pull-interval',
+    title: 'Auto Pull Interval (minutes)',
+    description: 'How often to fetch updates from GitHub',
+    defaultValue: 5,
+  });
+
+  await plugin.settings.registerNumberSetting({
+    id: 'retry-interval',
+    title: 'Retry Interval (minutes)',
+    description: 'How often to retry failed pushes',
+    defaultValue: 5,
+  });
+
   await plugin.settings.registerStringSetting({
     id: 'conflict-policy',
     title: 'Conflict Resolution Policy',
@@ -99,7 +140,7 @@ async function onActivate(plugin: ReactRNPlugin) {
     action: async () => {
       await pullUpdates(plugin);
       await plugin.storage.setLocal('sync-status', 'Synced');
-      await plugin.app.toast('Pulled updates from GitHub', 'info');
+      await plugin.app.toast('Pulled updates from GitHub');
     },
   });
 
@@ -110,11 +151,11 @@ async function onActivate(plugin: ReactRNPlugin) {
       try {
         await pushAllCards(plugin);
         await plugin.storage.setLocal('sync-status', 'Synced');
-        await plugin.app.toast('Pushed local changes to GitHub', 'success');
+        await plugin.app.toast('Pushed local changes to GitHub');
       } catch (err) {
         console.error(err);
         await plugin.storage.setLocal('sync-status', 'Error');
-        await plugin.app.toast('Push to GitHub failed', 'error');
+        await plugin.app.toast('Push to GitHub failed');
       }
     },
   });
@@ -165,17 +206,7 @@ async function onActivate(plugin: ReactRNPlugin) {
     console.log('Periodic timer fired');
   }, 60 * 1000);
 
-  retryInterval = setInterval(() => {
-    processFailedQueue(plugin);
-  }, 5 * 60 * 1000);
-
-  const autoPull = await plugin.settings.getSetting<boolean>('auto-pull');
-  if (autoPull) {
-    pullInterval = setInterval(() => {
-      pullUpdates(plugin);
-    }, 5 * 60 * 1000);
-    await pullUpdates(plugin);
-  }
+  await restartTimers(plugin);
 
   // kick off any queued pushes immediately on load
   await processFailedQueue(plugin);
