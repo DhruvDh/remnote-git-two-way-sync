@@ -4,6 +4,7 @@ import {
   SimpleCard,
   SimpleRem,
   parseCardMarkdown,
+  ParsedCard,
 } from './markdown';
 import { createOrUpdateFile, deleteFile, getFile, listFiles } from './api';
 
@@ -35,6 +36,77 @@ function getPath(subdir: string, cardId: string) {
   return subdir ? `${subdir}/${cardId}.md` : `${cardId}.md`;
 }
 
+async function createConflictFile(
+  plugin: ReactRNPlugin,
+  subdir: string,
+  cardId: string,
+  localContent: string,
+  remoteContent: string
+) {
+  const conflictDir = subdir ? `${subdir}/conflicts` : 'conflicts';
+  const path = `${conflictDir}/${cardId}.md`;
+  const body = `# Conflict for ${cardId}\n\n## Local Version\n\n${localContent}\n\n## Remote Version\n\n${remoteContent}\n`;
+  await createOrUpdateFile(plugin, path, body, undefined);
+}
+
+async function applyParsedToRem(
+  plugin: ReactRNPlugin,
+  parsed: ParsedCard,
+  rem: any,
+  card: any
+) {
+  await rem.setText(await plugin.richText.parseFromMarkdown(parsed.question));
+  await rem.setBackText(await plugin.richText.parseFromMarkdown(parsed.answer));
+
+  const currentTags = await rem.getTagRems();
+  const currentNames = await Promise.all(
+    currentTags.map(async (t: any) =>
+      t.text ? await plugin.richText.toString(t.text) : ''
+    )
+  );
+  for (const tagName of parsed.tags) {
+    if (!currentNames.includes(tagName)) {
+      const tagText = await plugin.richText.parseFromMarkdown(tagName);
+      let tagRem = await plugin.rem.findByName(tagText, null);
+      if (!tagRem) {
+        tagRem = await plugin.rem.createRem();
+        if (tagRem) {
+          await tagRem.addPowerup(BuiltInPowerupCodes.UsedAsTag);
+          await tagRem.setText(tagText);
+        }
+      }
+      if (tagRem) {
+        await rem.addTag(tagRem);
+      }
+    }
+  }
+  for (let i = 0; i < currentTags.length; i++) {
+    if (!parsed.tags.includes(currentNames[i])) {
+      await rem.removeTag(currentTags[i]._id);
+    }
+  }
+  if (parsed.nextDue) {
+    try {
+      (card as any).nextRepetitionTime = Date.parse(parsed.nextDue);
+    } catch {
+      /* ignore */
+    }
+  }
+  if (parsed.lastReviewed) {
+    try {
+      (card as any).lastRepetitionTime = Date.parse(parsed.lastReviewed);
+    } catch {
+      /* ignore */
+    }
+  }
+  if (parsed.difficulty !== null && parsed.difficulty !== undefined) {
+    (card as any).difficulty = parsed.difficulty;
+  }
+  if (parsed.stability !== null && parsed.stability !== undefined) {
+    (card as any).stability = parsed.stability;
+  }
+}
+
 export async function pushCardById(plugin: ReactRNPlugin, cardId: string) {
   const card = await plugin.card.findOne(cardId);
   if (!card) return;
@@ -56,9 +128,15 @@ export async function pushCardById(plugin: ReactRNPlugin, cardId: string) {
   const backText = rem.backText ? await plugin.richText.toString(rem.backText) : undefined;
   const tagRems = await rem.getTagRems();
   const tags = await Promise.all(
-    tagRems.map(async (t) => (t.text ? await plugin.richText.toString(t.text) : ''))
+    tagRems.map(async (t: any) => (t.text ? await plugin.richText.toString(t.text) : ''))
   );
-  const simpleRem: SimpleRem = { _id: rem._id, text, backText, tags };
+  const simpleRem: SimpleRem = {
+    _id: rem._id,
+    text,
+    backText,
+    tags,
+    updatedAt: rem.updatedAt,
+  };
 
   const content = serializeCard(simpleCard, simpleRem);
   const path = getPath(subdir, cardId);
@@ -74,6 +152,52 @@ export async function pushCardById(plugin: ReactRNPlugin, cardId: string) {
     if (idx !== -1) {
       queue.splice(idx, 1);
       await saveFailedQueue(plugin, queue);
+    }
+  } else if (res.status === 409 && shaEntry) {
+    const remote = await getFile(plugin, path);
+    if (remote.ok && remote.data) {
+      const parsed = parseCardMarkdown(remote.data.content);
+      const remoteUpdated = parsed.updated ? Date.parse(parsed.updated) : 0;
+      const localUpdated = rem.updatedAt;
+      const policy =
+        (await plugin.settings.getSetting<string>('conflict-policy')) || 'newer';
+      let useRemote = false;
+      if (policy === 'prefer-github') {
+        useRemote = true;
+      } else if (policy === 'prefer-remnote') {
+        useRemote = false;
+      } else {
+        if (remoteUpdated > localUpdated) useRemote = true;
+        else if (remoteUpdated < localUpdated) useRemote = false;
+        else {
+          await createConflictFile(
+            plugin,
+            subdir,
+            cardId,
+            content,
+            remote.data.content
+          );
+          console.warn(`Conflict for card ${cardId} requires manual resolution.`);
+          return;
+        }
+      }
+      if (useRemote) {
+        await applyParsedToRem(plugin, parsed, rem, card);
+        shaMap[cardId] = { sha: remote.data.sha, remId: rem._id };
+        await saveShaMap(plugin, shaMap);
+      } else {
+        const retry = await createOrUpdateFile(plugin, path, content, remote.data.sha);
+        if (retry.ok && retry.sha) {
+          shaMap[cardId] = { sha: retry.sha, remId: rem._id };
+          await saveShaMap(plugin, shaMap);
+        } else {
+          const queue = await loadFailedQueue(plugin);
+          if (!queue.includes(cardId)) {
+            queue.push(cardId);
+            await saveFailedQueue(plugin, queue);
+          }
+        }
+      }
     }
   } else {
     const queue = await loadFailedQueue(plugin);
@@ -127,8 +251,68 @@ export async function pullUpdates(plugin: ReactRNPlugin) {
       if (!res.ok || !res.data) continue;
       const parsed = parseCardMarkdown(res.data.content);
 
+      const policy =
+        (await plugin.settings.getSetting<string>('conflict-policy')) || 'newer';
+
       let card = await plugin.card.findOne(parsed.cardId);
       let rem = card ? await card.getRem() : undefined;
+
+      const remoteUpdated = parsed.updated ? Date.parse(parsed.updated) : 0;
+      const localUpdated = rem ? rem.updatedAt : 0;
+      let applyRemote = true;
+      if (rem) {
+        if (policy === 'prefer-remnote') {
+          applyRemote = false;
+        } else if (policy === 'prefer-github') {
+          applyRemote = true;
+        } else {
+          if (remoteUpdated > localUpdated) applyRemote = true;
+          else if (remoteUpdated < localUpdated) applyRemote = false;
+          else {
+            const simpleCard: SimpleCard = {
+              _id: card!._id,
+              remId: card!.remId,
+              nextRepetitionTime: card!.nextRepetitionTime,
+              lastRepetitionTime: card!.lastRepetitionTime,
+              difficulty: (card as any).difficulty,
+              stability: (card as any).stability,
+            };
+            const text = rem.text
+              ? await plugin.richText.toString(rem.text)
+              : undefined;
+            const backText = rem.backText
+              ? await plugin.richText.toString(rem.backText)
+              : undefined;
+            const tagRems = await rem.getTagRems();
+            const tags = await Promise.all(
+              tagRems.map(async (t: any) =>
+                t.text ? await plugin.richText.toString(t.text) : ''
+              )
+            );
+            const simpleRem: SimpleRem = {
+              _id: rem._id,
+              text,
+              backText,
+              tags,
+              updatedAt: rem.updatedAt,
+            };
+            const localContent = serializeCard(simpleCard, simpleRem);
+            await createConflictFile(
+              plugin,
+              subdir,
+              id,
+              localContent,
+              res.data.content
+            );
+            console.warn(`Conflict for card ${id} requires manual resolution.`);
+            continue;
+          }
+        }
+      }
+
+      if (!applyRemote) {
+        continue;
+      }
 
       if (!rem) {
         rem = await plugin.rem.createRem();
@@ -141,10 +325,14 @@ export async function pullUpdates(plugin: ReactRNPlugin) {
           let tagRem = await plugin.rem.findByName(tagText, null);
           if (!tagRem) {
             tagRem = await plugin.rem.createRem();
-            await tagRem.addPowerup(BuiltInPowerupCodes.UsedAsTag);
-            await tagRem.setText(tagText);
+            if (tagRem) {
+              await tagRem.addPowerup(BuiltInPowerupCodes.UsedAsTag);
+              await tagRem.setText(tagText);
+            }
           }
-          await rem.addTag(tagRem);
+          if (tagRem) {
+            await rem.addTag(tagRem);
+          }
         }
 
         const cards = await rem.getCards();
@@ -155,7 +343,9 @@ export async function pullUpdates(plugin: ReactRNPlugin) {
 
         const currentTags = await rem.getTagRems();
         const currentNames = await Promise.all(
-          currentTags.map(async (t) => (t.text ? await plugin.richText.toString(t.text) : ''))
+          currentTags.map(async (t: any) =>
+            t.text ? await plugin.richText.toString(t.text) : ''
+          )
         );
 
         for (const tagName of parsed.tags) {
@@ -164,10 +354,14 @@ export async function pullUpdates(plugin: ReactRNPlugin) {
             let tagRem = await plugin.rem.findByName(tagText, null);
             if (!tagRem) {
               tagRem = await plugin.rem.createRem();
-              await tagRem.addPowerup(BuiltInPowerupCodes.UsedAsTag);
-              await tagRem.setText(tagText);
+              if (tagRem) {
+                await tagRem.addPowerup(BuiltInPowerupCodes.UsedAsTag);
+                await tagRem.setText(tagText);
+              }
             }
-            await rem.addTag(tagRem);
+            if (tagRem) {
+              await rem.addTag(tagRem);
+            }
           }
         }
 
@@ -227,10 +421,14 @@ export async function pullUpdates(plugin: ReactRNPlugin) {
         let tagRem = await plugin.rem.findByName(tagText, null);
         if (!tagRem) {
           tagRem = await plugin.rem.createRem();
-          await tagRem.addPowerup(BuiltInPowerupCodes.UsedAsTag);
-          await tagRem.setText(tagText);
+          if (tagRem) {
+            await tagRem.addPowerup(BuiltInPowerupCodes.UsedAsTag);
+            await tagRem.setText(tagText);
+          }
         }
-        await rem.addTag(tagRem);
+        if (tagRem) {
+          await rem.addTag(tagRem);
+        }
         delete shaMap[id];
       }
     }
