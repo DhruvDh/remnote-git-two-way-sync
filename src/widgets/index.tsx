@@ -7,8 +7,10 @@ import {
   pushCardById,
   deleteCardFile,
   processFailedQueue,
+  pushAllCards,
   loadShaMap,
   pullUpdates,
+  setSyncStatus,
 } from '../github/sync';
 import '../style.css';
 import '../App.css';
@@ -17,6 +19,18 @@ import '../App.css';
 let syncInterval: ReturnType<typeof setInterval> | undefined;
 let retryInterval: ReturnType<typeof setInterval> | undefined;
 let pullInterval: ReturnType<typeof setInterval> | undefined;
+
+async function syncNow(plugin: ReactRNPlugin) {
+  try {
+    await pullUpdates(plugin);
+    await pushAllCards(plugin);
+    await plugin.app.toast('Sync completed');
+  } catch (e) {
+    await plugin.app.toast('Sync failed');
+    await setSyncStatus(plugin, 'Error');
+    console.error(e);
+  }
+}
 
 async function onActivate(plugin: ReactRNPlugin) {
   // Register GitHub sync settings
@@ -71,30 +85,40 @@ async function onActivate(plugin: ReactRNPlugin) {
     defaultValue: 'newer',
   });
 
-  // A command that inserts text into the editor if focused.
   await plugin.app.registerCommand({
-    id: 'editor-command',
-    name: 'Editor Command',
-    action: async () => {
-      plugin.editor.insertPlainText('Hello World!');
-    },
-  });
-
-  await plugin.app.registerCommand({
-    id: 'github-pull',
-    name: 'GitHub: Pull Updates',
+    id: 'github-sync-pull',
+    name: 'GitHub Sync: Pull',
+    quickCode: 'github pull',
     action: async () => {
       await pullUpdates(plugin);
+      await plugin.app.toast('Pulled updates from GitHub');
     },
   });
 
-  // Show a toast notification to the user.
-  await plugin.app.toast("I'm a toast!");
+  await plugin.app.registerCommand({
+    id: 'github-sync-push',
+    name: 'GitHub Sync: Push',
+    quickCode: 'github push',
+    action: async () => {
+      await pushAllCards(plugin);
+      await plugin.app.toast('Pushed flashcards to GitHub');
+    },
+  });
 
-  // Register a sidebar widget.
-  await plugin.app.registerWidget('sample_widget', WidgetLocation.RightSidebar, {
+  // Register a sidebar widget showing sync status.
+  await plugin.app.registerWidget('sync_widget', WidgetLocation.RightSidebar, {
     dimensions: { height: 'auto', width: '100%' },
   });
+
+  await plugin.event.addListener(
+    'message.broadcast',
+    'sync-now-msg',
+    async (payload) => {
+      if (payload === 'sync-now') {
+        await syncNow(plugin);
+      }
+    }
+  );
 
   // Listen for Rem changes to detect flashcard edits
   await plugin.event.addListener('RemChanged', 'sync-rem-changed', async ({ remId }) => {
@@ -150,12 +174,14 @@ async function onActivate(plugin: ReactRNPlugin) {
 
   // kick off any queued pushes immediately on load
   await processFailedQueue(plugin);
+  await setSyncStatus(plugin, 'Synced');
 }
 
 async function onDeactivate(plugin: ReactRNPlugin) {
   await plugin.event.removeListener('RemChanged', 'sync-rem-changed');
   await plugin.event.removeListener('queue.complete-card', 'sync-complete-card');
   await plugin.event.removeListener('queue.load-card', 'sync-load-card');
+  await plugin.event.removeListener('message.broadcast', 'sync-now-msg');
 
   if (syncInterval) {
     clearInterval(syncInterval);

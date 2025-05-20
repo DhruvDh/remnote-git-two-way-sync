@@ -15,6 +15,20 @@ interface ShaEntry {
 
 const SHA_MAP_KEY = 'github-sha-map';
 const FAILED_QUEUE_KEY = 'github-failed-queue';
+const STATUS_KEY = 'github-sync-status';
+
+export async function setSyncStatus(
+  plugin: ReactRNPlugin,
+  status: string
+): Promise<void> {
+  await plugin.storage.setSynced(STATUS_KEY, status);
+}
+
+export async function getSyncStatus(
+  plugin: ReactRNPlugin
+): Promise<string> {
+  return (await plugin.storage.getSynced<string>(STATUS_KEY)) || 'Idle';
+}
 
 export async function loadShaMap(plugin: ReactRNPlugin): Promise<Record<string, ShaEntry>> {
   return (await plugin.storage.getSynced<Record<string, ShaEntry>>(SHA_MAP_KEY)) || {};
@@ -113,6 +127,8 @@ export async function pushCardById(plugin: ReactRNPlugin, cardId: string) {
   const rem = await card.getRem();
   if (!rem) return;
 
+  await setSyncStatus(plugin, 'Syncing');
+
   const subdir = (await plugin.settings.getSetting<string>('github-subdir')) || '';
 
   const simpleCard: SimpleCard = {
@@ -153,6 +169,7 @@ export async function pushCardById(plugin: ReactRNPlugin, cardId: string) {
       queue.splice(idx, 1);
       await saveFailedQueue(plugin, queue);
     }
+    await setSyncStatus(plugin, 'Synced');
   } else if (res.status === 409 && shaEntry) {
     const remote = await getFile(plugin, path);
     if (remote.ok && remote.data) {
@@ -185,17 +202,20 @@ export async function pushCardById(plugin: ReactRNPlugin, cardId: string) {
         await applyParsedToRem(plugin, parsed, rem, card);
         shaMap[cardId] = { sha: remote.data.sha, remId: rem._id };
         await saveShaMap(plugin, shaMap);
+        await setSyncStatus(plugin, 'Synced');
       } else {
         const retry = await createOrUpdateFile(plugin, path, content, remote.data.sha);
         if (retry.ok && retry.sha) {
           shaMap[cardId] = { sha: retry.sha, remId: rem._id };
           await saveShaMap(plugin, shaMap);
+          await setSyncStatus(plugin, 'Synced');
         } else {
           const queue = await loadFailedQueue(plugin);
           if (!queue.includes(cardId)) {
             queue.push(cardId);
             await saveFailedQueue(plugin, queue);
           }
+          await setSyncStatus(plugin, 'Error');
         }
       }
     }
@@ -205,6 +225,7 @@ export async function pushCardById(plugin: ReactRNPlugin, cardId: string) {
       queue.push(cardId);
       await saveFailedQueue(plugin, queue);
     }
+    await setSyncStatus(plugin, 'Error');
   }
 }
 
@@ -218,6 +239,9 @@ export async function deleteCardFile(plugin: ReactRNPlugin, cardId: string) {
   if (res.ok) {
     delete shaMap[cardId];
     await saveShaMap(plugin, shaMap);
+    await setSyncStatus(plugin, 'Synced');
+  } else {
+    await setSyncStatus(plugin, 'Error');
   }
 }
 
@@ -227,15 +251,26 @@ export async function processFailedQueue(plugin: ReactRNPlugin) {
   for (const cardId of [...queue]) {
     await pushCardById(plugin, cardId);
   }
+  await setSyncStatus(plugin, 'Synced');
+}
+
+export async function pushAllCards(plugin: ReactRNPlugin) {
+  const cards = await plugin.card.getAll();
+  for (const c of cards) {
+    await pushCardById(plugin, c._id);
+  }
+  await setSyncStatus(plugin, 'Synced');
 }
 
 export async function pullUpdates(plugin: ReactRNPlugin) {
+  await setSyncStatus(plugin, 'Syncing');
   const subdir = (await plugin.settings.getSetting<string>('github-subdir')) || '';
   const shaMap = await loadShaMap(plugin);
 
   const { ok, files } = await listFiles(plugin, subdir);
   if (!ok || !files) {
     console.error('Failed to list files from GitHub');
+    await setSyncStatus(plugin, 'Error');
     return;
   }
 
@@ -435,4 +470,5 @@ export async function pullUpdates(plugin: ReactRNPlugin) {
   }
 
   await saveShaMap(plugin, shaMap);
+  await setSyncStatus(plugin, 'Synced');
 }
