@@ -149,6 +149,12 @@ async function applyParsedToRem(
   if (parsed.stability !== null && parsed.stability !== undefined) {
     (card as any).stability = parsed.stability;
   }
+  if (parsed.ease !== null && parsed.ease !== undefined) {
+    (card as any).ease = parsed.ease;
+  }
+  if (parsed.interval !== null && parsed.interval !== undefined) {
+    (card as any).interval = parsed.interval;
+  }
 }
 
 export async function pushCardById(plugin: ReactRNPlugin, cardId: string) {
@@ -160,6 +166,18 @@ export async function pushCardById(plugin: ReactRNPlugin, cardId: string) {
   const subdir = (await plugin.settings.getSetting<string>('github-subdir')) || '';
   const useSlug = await plugin.settings.getSetting<boolean>('use-slug-filenames');
 
+  let scheduler =
+    (await plugin.settings.getSetting<string>('scheduler')) || undefined;
+  if (!scheduler) {
+    if ((card as any).difficulty !== undefined || (card as any).stability !== undefined) {
+      scheduler = 'FSRS';
+    } else if ((card as any).ease !== undefined || (card as any).interval !== undefined) {
+      scheduler = 'SM2';
+    } else {
+      scheduler = 'FSRS';
+    }
+  }
+
   const simpleCard: SimpleCard = {
     _id: card._id,
     remId: card.remId,
@@ -167,6 +185,9 @@ export async function pushCardById(plugin: ReactRNPlugin, cardId: string) {
     lastRepetitionTime: card.lastRepetitionTime,
     difficulty: (card as any).difficulty,
     stability: (card as any).stability,
+    ease: (card as any).ease,
+    interval: (card as any).interval,
+    scheduler,
   };
 
   const text = rem.text ? await plugin.richText.toString(rem.text) : undefined;
@@ -342,6 +363,14 @@ export async function pullUpdates(plugin: ReactRNPlugin) {
               lastRepetitionTime: card!.lastRepetitionTime,
               difficulty: (card as any).difficulty,
               stability: (card as any).stability,
+              ease: (card as any).ease,
+              interval: (card as any).interval,
+              scheduler:
+                (await plugin.settings.getSetting<string>('scheduler')) ||
+                ((card as any).difficulty !== undefined ||
+                (card as any).stability !== undefined
+                  ? 'FSRS'
+                  : 'SM2'),
             };
             const text = rem.text
               ? await plugin.richText.toString(rem.text)
@@ -463,6 +492,12 @@ export async function pullUpdates(plugin: ReactRNPlugin) {
         }
         if (parsed.stability !== null && parsed.stability !== undefined) {
           (card as any).stability = parsed.stability;
+        }
+        if (parsed.ease !== null && parsed.ease !== undefined) {
+          (card as any).ease = parsed.ease;
+        }
+        if (parsed.interval !== null && parsed.interval !== undefined) {
+          (card as any).interval = parsed.interval;
         }
       }
 
