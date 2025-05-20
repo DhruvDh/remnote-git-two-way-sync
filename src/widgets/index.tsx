@@ -8,6 +8,8 @@ import {
   deleteCardFile,
   processFailedQueue,
   loadShaMap,
+  saveShaMap,
+  fileShaMap,
   pullUpdates,
 } from '../github/sync';
 import '../style.css';
@@ -71,6 +73,8 @@ async function onActivate(plugin: ReactRNPlugin) {
     defaultValue: 'newer',
   });
 
+  await loadShaMap(plugin);
+
   // A command that inserts text into the editor if focused.
   await plugin.app.registerCommand({
     id: 'editor-command',
@@ -106,9 +110,8 @@ async function onActivate(plugin: ReactRNPlugin) {
     for (const id of currentIds) {
       await pushCardById(plugin, id);
     }
-    const shaMap = await loadShaMap(plugin);
-    for (const id of Object.keys(shaMap)) {
-      if (shaMap[id].remId === remId && !currentIds.includes(id)) {
+    for (const id of Object.keys(fileShaMap)) {
+      if (fileShaMap[id].remId === remId && !currentIds.includes(id)) {
         await deleteCardFile(plugin, id);
       }
     }
@@ -153,6 +156,7 @@ async function onActivate(plugin: ReactRNPlugin) {
 }
 
 async function onDeactivate(plugin: ReactRNPlugin) {
+  await saveShaMap(plugin);
   await plugin.event.removeListener('RemChanged', 'sync-rem-changed');
   await plugin.event.removeListener('queue.complete-card', 'sync-complete-card');
   await plugin.event.removeListener('queue.load-card', 'sync-load-card');
