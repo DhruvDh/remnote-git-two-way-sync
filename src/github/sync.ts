@@ -93,6 +93,31 @@ async function logConflict(plugin: ReactRNPlugin, cardId: string) {
   }
 }
 
+async function confirmAction(
+  plugin: ReactRNPlugin,
+  message: string
+): Promise<boolean> {
+  const app: any = (plugin as any).app;
+  if (app && typeof app.confirm === 'function') {
+    try {
+      return await app.confirm(message);
+    } catch {}
+  }
+  const win: any = (plugin as any).window;
+  if (win && typeof win.showConfirm === 'function') {
+    try {
+      return await win.showConfirm(message);
+    } catch {}
+  }
+  if (typeof window !== 'undefined' && typeof window.confirm === 'function') {
+    return window.confirm(message);
+  }
+  if (app && typeof app.toast === 'function') {
+    await app.toast(message);
+  }
+  return false;
+}
+
 async function applyParsedToRem(
   plugin: ReactRNPlugin,
   parsed: ParsedCard,
@@ -523,7 +548,10 @@ export async function pullUpdates(plugin: ReactRNPlugin) {
         continue;
       }
 
-      const remove = window.confirm(`File for card ${id} deleted on GitHub. Remove locally?`);
+      const remove = await confirmAction(
+        plugin,
+        `File for card ${id} deleted on GitHub. Remove locally?`
+      );
       if (remove) {
         await rem.remove();
         delete fileShaMap[id];
