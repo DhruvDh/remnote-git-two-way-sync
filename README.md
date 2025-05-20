@@ -53,11 +53,22 @@ Your PAT gives write access to the specified repository. Keep it secret and do n
 
 ## Running Tests
 
-This repository includes a small test that verifies markdown serialization. Run it with:
+This repository includes automated unit tests run with **Jest**. Execute them with:
 
 ```bash
 npm test
 ```
 
 All tests should pass.
+
+## Manual Verification
+
+To verify two-way syncing:
+
+1. Create a new GitHub repository and generate a Personal Access Token with `repo` scope.
+2. In a fresh RemNote knowledge base install this plugin and enter the token and repository info in its settings.
+3. Make a simple flashcard such as `Planet::Earth` and wait for it to appear in the repository as a Markdown file.
+4. Edit the answer text directly on GitHub and commit the change.
+5. Trigger **Sync Now** from the plugin sidebar and confirm the update shows in RemNote.
+6. Delete the card in RemNote and after syncing confirm the file is removed from GitHub.
 
