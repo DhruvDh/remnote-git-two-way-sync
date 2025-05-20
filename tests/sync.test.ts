@@ -25,6 +25,8 @@ function createPlugin() {
       createRem: jest.fn(),
       findByName: jest.fn(),
     },
+    app: { confirm: jest.fn(), toast: jest.fn() },
+    window: { showConfirm: jest.fn() },
     storage: {
       getSynced: jest.fn().mockResolvedValue([]),
       setSynced: jest.fn(),
@@ -79,6 +81,7 @@ describe('pushCardById', () => {
       lastRepetitionTime: 50,
       difficulty: undefined,
       stability: undefined,
+      scheduler: 'FSRS',
     };
     const simpleRem = {
       _id: 'rem1',
@@ -138,5 +141,24 @@ describe('pullUpdates', () => {
       expect.any(String),
       undefined
     );
+  });
+
+  it('asks for confirmation when file deleted', async () => {
+    const plugin = createPlugin();
+    const rem = createMockRem();
+    rem.remove = jest.fn();
+    const card = createMockCard(rem);
+    plugin.card.findOne.mockResolvedValue(card);
+    fileShaMap['card1'] = { sha: 'old', remId: 'rem1', timestamp: 0 } as any;
+
+    listFiles.mockResolvedValue({ ok: true, files: [] });
+    plugin.app.confirm.mockResolvedValue(true);
+
+    await pullUpdates(plugin);
+
+    expect(plugin.app.confirm).toHaveBeenCalledWith(
+      'File for card card1 deleted on GitHub. Remove locally?'
+    );
+    expect(rem.remove).toHaveBeenCalled();
   });
 });
