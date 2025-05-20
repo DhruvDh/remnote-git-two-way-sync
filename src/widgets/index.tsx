@@ -11,6 +11,8 @@ import {
   saveShaMap,
   fileShaMap,
   pullUpdates,
+  pushAllCards,
+  syncNow,
 } from '../github/sync';
 import '../style.css';
 import '../App.css';
@@ -85,18 +87,35 @@ async function onActivate(plugin: ReactRNPlugin) {
   });
 
   await plugin.app.registerCommand({
-    id: 'github-pull',
-    name: 'GitHub: Pull Updates',
+    id: 'github-sync-pull',
+    name: 'github-sync pull',
     action: async () => {
       await pullUpdates(plugin);
+      await plugin.storage.setLocal('sync-status', 'Synced');
+      await plugin.app.toast('Pulled updates from GitHub', 'info');
     },
   });
 
-  // Show a toast notification to the user.
-  await plugin.app.toast("I'm a toast!");
+  await plugin.app.registerCommand({
+    id: 'github-sync-push',
+    name: 'github-sync push',
+    action: async () => {
+      try {
+        await pushAllCards(plugin);
+        await plugin.storage.setLocal('sync-status', 'Synced');
+        await plugin.app.toast('Pushed local changes to GitHub', 'success');
+      } catch (err) {
+        console.error(err);
+        await plugin.storage.setLocal('sync-status', 'Error');
+        await plugin.app.toast('Push to GitHub failed', 'error');
+      }
+    },
+  });
 
-  // Register a sidebar widget.
-  await plugin.app.registerWidget('sample_widget', WidgetLocation.RightSidebar, {
+  await plugin.storage.setLocal('sync-status', 'Synced');
+
+  // Register a sidebar widget showing sync status
+  await plugin.app.registerWidget('sync_widget', WidgetLocation.RightSidebar, {
     dimensions: { height: 'auto', width: '100%' },
   });
 

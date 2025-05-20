@@ -442,3 +442,21 @@ export async function pullUpdates(plugin: ReactRNPlugin) {
   }
 
 }
+
+export async function pushAllCards(plugin: ReactRNPlugin) {
+  const cards = await plugin.card.getAll();
+  for (const c of cards) {
+    await pushCardById(plugin, c._id);
+  }
+}
+
+export async function syncNow(plugin: ReactRNPlugin): Promise<boolean> {
+  try {
+    await pullUpdates(plugin);
+    await pushAllCards(plugin);
+    return true;
+  } catch (err) {
+    console.error('Sync failed', err);
+    return false;
+  }
+}
