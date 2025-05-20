@@ -13,6 +13,7 @@ export interface SimpleRem {
   text?: string;
   backText?: string;
   tags?: string[];
+  updatedAt?: number;
 }
 
 export interface ParsedCard {
@@ -24,6 +25,7 @@ export interface ParsedCard {
   stability?: number | null;
   lastReviewed?: string | null;
   nextDue?: string | null;
+  updated?: string | null;
   question: string;
   answer: string;
 }
@@ -45,6 +47,7 @@ export function serializeCard(card: SimpleCard, rem: SimpleRem): string {
     nextDue: card.nextRepetitionTime
       ? new Date(card.nextRepetitionTime).toISOString()
       : null,
+    updated: rem.updatedAt ? new Date(rem.updatedAt).toISOString() : null,
   };
 
   const yaml = require('yaml');
@@ -90,6 +93,7 @@ export function parseCardMarkdown(content: string): ParsedCard {
     stability: front.stability ?? null,
     lastReviewed: front.lastReviewed ?? null,
     nextDue: front.nextDue ?? null,
+    updated: front.updated ?? null,
     question,
     answer,
   };

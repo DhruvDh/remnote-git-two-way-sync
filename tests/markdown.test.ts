@@ -15,6 +15,7 @@ const rem: SimpleRem = {
   text: 'Why does the sky appear blue during the day?',
   backText: 'Rayleigh scattering causes blue light to dominate the sky.',
   tags: ['Astronomy', 'LightScattering'],
+  updatedAt: Date.parse('2025-04-11T10:00:00Z'),
 };
 
 const md = serializeCard(card, rem);
@@ -29,5 +30,6 @@ assert.strictEqual(parsed.lastReviewed, new Date(card.lastRepetitionTime!).toISO
 assert.strictEqual(parsed.nextDue, new Date(card.nextRepetitionTime!).toISOString());
 assert.strictEqual(parsed.question, rem.text);
 assert.strictEqual(parsed.answer, rem.backText);
+assert.strictEqual(parsed.updated, new Date(rem.updatedAt!).toISOString());
 
 console.log('All tests passed.');

@@ -64,6 +64,13 @@ async function onActivate(plugin: ReactRNPlugin) {
     defaultValue: true,
   });
 
+  await plugin.settings.registerStringSetting({
+    id: 'conflict-policy',
+    title: 'Conflict Resolution Policy',
+    description: 'newer | prefer-github | prefer-remnote',
+    defaultValue: 'newer',
+  });
+
   // A command that inserts text into the editor if focused.
   await plugin.app.registerCommand({
     id: 'editor-command',
