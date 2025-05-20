@@ -7,6 +7,7 @@ This plugin synchronizes your RemNote flashcards with a GitHub repository. Each 
 - **Automatic push** – card edits, reviews and tag changes in RemNote are committed to GitHub.
 - **Automatic pull** – periodically fetches updates from GitHub and applies them to your knowledge base.
 - **Markdown format** – cards are saved as Markdown with YAML front‑matter including FSRS fields.
+- **Media support** – images in cards are stored under `media/` in the repository and linked from Markdown.
 - **Conflict handling** – basic conflict resolution with optional policies and conflict files.
 - **Settings** – configure repository, branch, subdirectory and whether auto push/pull is enabled.
 

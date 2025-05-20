@@ -142,9 +142,11 @@ export async function pushCardById(plugin: ReactRNPlugin, cardId: string) {
     backText,
     tags,
     updatedAt: rem.updatedAt,
+    textRich: rem.text,
+    backRich: rem.backText,
   };
 
-  const content = serializeCard(simpleCard, simpleRem);
+  const content = await serializeCard(plugin, simpleCard, simpleRem);
   const path = getPath(subdir, cardId);
 
   const shaEntry = fileShaMap[cardId];
@@ -160,7 +162,7 @@ export async function pushCardById(plugin: ReactRNPlugin, cardId: string) {
   } else if (res.status === 409 && shaEntry) {
     const remote = await getFile(plugin, path);
     if (remote.ok && remote.data) {
-      const parsed = parseCardMarkdown(remote.data.content);
+      const parsed = await parseCardMarkdown(plugin, remote.data.content);
       const remoteUpdated = parsed.updated ? Date.parse(parsed.updated) : 0;
       const localUpdated = rem.updatedAt;
       const policy =
@@ -256,7 +258,7 @@ export async function pullUpdates(plugin: ReactRNPlugin) {
     if (!entry || entry.sha !== file.sha) {
       const res = await getFile(plugin, file.path);
       if (!res.ok || !res.data) continue;
-      const parsed = parseCardMarkdown(res.data.content);
+      const parsed = await parseCardMarkdown(plugin, res.data.content);
 
       const policy =
         (await plugin.settings.getSetting<string>('conflict-policy')) || 'newer';
@@ -302,8 +304,10 @@ export async function pullUpdates(plugin: ReactRNPlugin) {
               backText,
               tags,
               updatedAt: rem.updatedAt,
+              textRich: rem.text,
+              backRich: rem.backText,
             };
-            const localContent = serializeCard(simpleCard, simpleRem);
+            const localContent = await serializeCard(plugin, simpleCard, simpleRem);
             await createConflictFile(
               plugin,
               subdir,

@@ -127,6 +127,70 @@ export async function listFiles(
   }
 }
 
+export async function createOrUpdateBinaryFile(
+  plugin: ReactRNPlugin,
+  path: string,
+  base64Content: string,
+  sha?: string
+): Promise<{ ok: boolean; status: number; message?: string; sha?: string }> {
+  try {
+    const { owner, repo, branch, token } = await getSettings(plugin);
+    const url = `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(
+      path
+    )}`;
+    const body: any = {
+      message: `Update ${path}`,
+      content: base64Content,
+      branch,
+    };
+    if (sha) {
+      body.sha = sha;
+    }
+    const res = await fetch(url, {
+      method: 'PUT',
+      headers: {
+        Authorization: `token ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      return { ok: false, status: res.status, message: await res.text() };
+    }
+    const json = await res.json();
+    return { ok: true, status: res.status, sha: json.content.sha };
+  } catch (err: any) {
+    return { ok: false, status: 0, message: err.message };
+  }
+}
+
+export async function getBinaryFile(
+  plugin: ReactRNPlugin,
+  path: string
+): Promise<{ ok: boolean; status: number; data?: { content: string; sha: string }; message?: string }> {
+  try {
+    const { owner, repo, branch, token } = await getSettings(plugin);
+    const res = await fetch(
+      `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(
+        path
+      )}?ref=${branch}`,
+      {
+        headers: {
+          Authorization: `token ${token}`,
+        },
+      }
+    );
+    if (!res.ok) {
+      return { ok: false, status: res.status, message: await res.text() };
+    }
+    const json = await res.json();
+    const content = json.content.replace(/\n/g, '');
+    return { ok: true, status: res.status, data: { content, sha: json.sha } };
+  } catch (err: any) {
+    return { ok: false, status: 0, message: err.message };
+  }
+}
+
 async function getSettings(plugin: ReactRNPlugin) {
   const repoString = await plugin.settings.getSetting<string>('github-repo');
   const token = await plugin.settings.getSetting<string>('github-token');
