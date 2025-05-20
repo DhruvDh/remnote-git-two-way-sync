@@ -116,6 +116,17 @@ async function onActivate(plugin: ReactRNPlugin) {
     defaultValue: 5,
   });
 
+  await plugin.settings.registerDropdownSetting({
+    id: 'scheduler',
+    title: 'Scheduler',
+    description: 'Select FSRS or SM2 for card metadata',
+    options: [
+      { key: 'fsrs', label: 'FSRS', value: 'FSRS' },
+      { key: 'sm2', label: 'SM2', value: 'SM2' },
+    ],
+    defaultValue: 'FSRS',
+  });
+
   await plugin.settings.registerStringSetting({
     id: 'conflict-policy',
     title: 'Conflict Resolution Policy',

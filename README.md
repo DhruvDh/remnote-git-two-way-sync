@@ -44,6 +44,7 @@ The plugin requires a GitHub Personal Access Token (PAT) with access to the repo
 - Enable or disable **auto‑push** and **auto‑pull** as desired.
 - **Auto Pull Interval (minutes)** – how frequently to check GitHub for updates (default 5).
 - **Retry Interval (minutes)** – how often failed pushes are retried (default 5).
+- **Scheduler** – choose `FSRS` or `SM2` for card scheduling metadata.
 
 ### Security Notes
 
