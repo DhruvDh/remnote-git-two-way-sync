@@ -6,6 +6,11 @@ export interface SimpleCard {
   // FSRS fields
   difficulty?: number;
   stability?: number;
+  // SM2 fields
+  ease?: number;
+  interval?: number;
+  // Scheduler type
+  scheduler?: string;
 }
 
 export interface SimpleRem {
@@ -23,6 +28,8 @@ export interface ParsedCard {
   scheduler?: string | null;
   difficulty?: number | null;
   stability?: number | null;
+  ease?: number | null;
+  interval?: number | null;
   lastReviewed?: string | null;
   nextDue?: string | null;
   updated?: string | null;
@@ -34,13 +41,17 @@ export interface ParsedCard {
  * Serialize a card/rem pair to a markdown string with YAML frontmatter.
  */
 export function serializeCard(card: SimpleCard, rem: SimpleRem): string {
+  const scheduler = card.scheduler
+    ? card.scheduler
+    : card.difficulty !== undefined || card.stability !== undefined
+    ? 'FSRS'
+    : 'SM2';
+
   const frontmatter: Record<string, any> = {
     remId: rem._id,
     cardId: card._id,
     tags: rem.tags ?? [],
-    scheduler: 'FSRS',
-    difficulty: card.difficulty ?? null,
-    stability: card.stability ?? null,
+    scheduler,
     lastReviewed: card.lastRepetitionTime
       ? new Date(card.lastRepetitionTime).toISOString()
       : null,
@@ -49,6 +60,14 @@ export function serializeCard(card: SimpleCard, rem: SimpleRem): string {
       : null,
     updated: rem.updatedAt ? new Date(rem.updatedAt).toISOString() : null,
   };
+
+  if (scheduler === 'FSRS') {
+    frontmatter.difficulty = card.difficulty ?? null;
+    frontmatter.stability = card.stability ?? null;
+  } else {
+    frontmatter.ease = card.ease ?? null;
+    frontmatter.interval = card.interval ?? null;
+  }
 
   const yaml = require('yaml');
   const front = yaml.stringify(frontmatter).trimEnd();
@@ -91,6 +110,8 @@ export function parseCardMarkdown(content: string): ParsedCard {
     scheduler: front.scheduler,
     difficulty: front.difficulty ?? null,
     stability: front.stability ?? null,
+    ease: front.ease ?? null,
+    interval: front.interval ?? null,
     lastReviewed: front.lastReviewed ?? null,
     nextDue: front.nextDue ?? null,
     updated: front.updated ?? null,
