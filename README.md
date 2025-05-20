@@ -44,6 +44,10 @@ The plugin requires a GitHub Personal Access Token (PAT) with access to the repo
 - Enable or disable **auto‑push** and **auto‑pull** as desired.
 - **Auto Pull Interval (minutes)** – how frequently to check GitHub for updates (default 5).
 - **Retry Interval (minutes)** – how often failed pushes are retried (default 5).
+- **Conflict Policy** – determines how conflicting edits are resolved. Set to
+  `newer` to keep whichever side was modified most recently, `prefer-github` to
+  always keep the repository version, or `prefer-remnote` to keep your local
+  changes.
 
 ### Security Notes
 
@@ -58,6 +62,10 @@ When a card is changed both in GitHub and RemNote, the plugin cannot automatical
 3. Show a toast notification informing you that manual resolution is required.
 
 Open the conflict file to decide which version to keep and update the card accordingly. Remove the entry from the *Conflicts* document once resolved.
+
+The **conflict-policy** setting controls automatic resolution. `newer` keeps the
+most recently edited version, `prefer-github` always applies changes from the
+repository, and `prefer-remnote` keeps your local edits.
 
 ## Known Limitations
 
