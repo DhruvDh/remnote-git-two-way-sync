@@ -42,6 +42,20 @@ function getPath(subdir: string, cardId: string) {
   return subdir ? `${subdir}/${cardId}.md` : `${cardId}.md`;
 }
 
+function getConfirmFunction(
+  plugin: ReactRNPlugin
+): ((msg: string) => Promise<boolean>) | null {
+  const appAny = plugin.app as any;
+  if (appAny && typeof appAny.confirm === 'function') {
+    return (msg: string) => appAny.confirm(msg);
+  }
+  const winAny = plugin.window as any;
+  if (winAny && typeof winAny.showConfirm === 'function') {
+    return (msg: string) => winAny.showConfirm(msg);
+  }
+  return null;
+}
+
 async function createConflictFile(
   plugin: ReactRNPlugin,
   subdir: string,
@@ -419,7 +433,19 @@ export async function pullUpdates(plugin: ReactRNPlugin) {
         continue;
       }
 
-      const remove = window.confirm(`File for card ${id} deleted on GitHub. Remove locally?`);
+      const message = `File for card ${id} deleted on GitHub. Remove locally?`;
+      const confirmFn = getConfirmFunction(plugin);
+      let remove = false;
+      if (confirmFn) {
+        try {
+          remove = await confirmFn(message);
+        } catch {
+          remove = false;
+        }
+      } else {
+        await plugin.app.toast(message);
+        remove = false;
+      }
       if (remove) {
         await rem.remove();
         delete fileShaMap[id];
