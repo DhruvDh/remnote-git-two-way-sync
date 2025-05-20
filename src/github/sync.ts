@@ -6,7 +6,13 @@ import {
   parseCardMarkdown,
   ParsedCard,
 } from './markdown';
-import { createOrUpdateFile, deleteFile, getFile, listFiles } from './api';
+import {
+  createOrUpdateFile,
+  deleteFile,
+  getFile,
+  listFiles,
+  getBinaryFile,
+} from './api';
 
 interface ShaEntry {
   sha: string;
@@ -124,8 +130,39 @@ async function applyParsedToRem(
   rem: any,
   card: any
 ) {
-  await rem.setText(await plugin.richText.parseFromMarkdown(parsed.question));
-  await rem.setBackText(await plugin.richText.parseFromMarkdown(parsed.answer));
+  const replaceMedia = async (text: string) => {
+    const regex = /!\[(.*?)\]\((media\/[^)]+)\)/g;
+    let result = '';
+    let last = 0;
+    for (const match of text.matchAll(regex)) {
+      result += text.slice(last, match.index);
+      last = (match.index || 0) + match[0].length;
+      const alt = match[1];
+      const path = match[2];
+      const file = await getBinaryFile(plugin, path);
+      if (file.ok && file.data) {
+        const ext = path.split('.').pop()?.toLowerCase() || 'png';
+        const mime = ext === 'jpg' || ext === 'jpeg'
+          ? 'image/jpeg'
+          : ext === 'gif'
+          ? 'image/gif'
+          : ext === 'svg'
+          ? 'image/svg+xml'
+          : 'image/png';
+        const base64 = Buffer.from(file.data.content).toString('base64');
+        result += `![${alt}](data:${mime};base64,${base64})`;
+      } else {
+        result += match[0];
+      }
+    }
+    result += text.slice(last);
+    return result;
+  };
+
+  const q = await replaceMedia(parsed.question);
+  const a = await replaceMedia(parsed.answer);
+  await rem.setText(await plugin.richText.parseFromMarkdown(q));
+  await rem.setBackText(await plugin.richText.parseFromMarkdown(a));
 
   const currentTags = await rem.getTagRems();
   const currentNames = await Promise.all(
@@ -215,8 +252,8 @@ export async function pushCardById(plugin: ReactRNPlugin, cardId: string) {
     scheduler,
   };
 
-  const text = rem.text ? await plugin.richText.toString(rem.text) : undefined;
-  const backText = rem.backText ? await plugin.richText.toString(rem.backText) : undefined;
+  const text = rem.text ? await plugin.richText.toMarkdown(rem.text) : undefined;
+  const backText = rem.backText ? await plugin.richText.toMarkdown(rem.backText) : undefined;
   const tagRems = await rem.getTagRems();
   const tags = await Promise.all(
     tagRems.map(async (t: any) => (t.text ? await plugin.richText.toString(t.text) : ''))
@@ -229,7 +266,7 @@ export async function pushCardById(plugin: ReactRNPlugin, cardId: string) {
     updatedAt: rem.updatedAt,
   };
 
-  const content = serializeCard(simpleCard, simpleRem);
+  const content = await serializeCard(plugin, simpleCard, simpleRem);
   let slug = fileShaMap[cardId]?.slug;
   if (useSlug && !slug && text) {
     slug = slugify(text);
@@ -398,10 +435,10 @@ export async function pullUpdates(plugin: ReactRNPlugin) {
                   : 'SM2'),
             };
             const text = rem.text
-              ? await plugin.richText.toString(rem.text)
+              ? await plugin.richText.toMarkdown(rem.text)
               : undefined;
             const backText = rem.backText
-              ? await plugin.richText.toString(rem.backText)
+              ? await plugin.richText.toMarkdown(rem.backText)
               : undefined;
             const tagRems = await rem.getTagRems();
             const tags = await Promise.all(
@@ -416,7 +453,7 @@ export async function pullUpdates(plugin: ReactRNPlugin) {
               tags,
               updatedAt: rem.updatedAt,
             };
-            const localContent = serializeCard(simpleCard, simpleRem);
+            const localContent = await serializeCard(plugin, simpleCard, simpleRem);
             await createConflictFile(
               plugin,
               subdir,

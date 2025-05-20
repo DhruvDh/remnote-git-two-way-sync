@@ -1,7 +1,9 @@
 import { serializeCard, parseCardMarkdown, SimpleCard, SimpleRem } from '../src/github/markdown';
+jest.mock('../src/github/api', () => ({ uploadMediaFile: jest.fn() }));
+const { uploadMediaFile } = require('../src/github/api');
 
 describe('markdown serialization', () => {
-  it('serializes and parses a FSRS card', () => {
+  it('serializes and parses a FSRS card', async () => {
     const card: SimpleCard = {
       _id: 'card-efgh5678',
       remId: 'rem-abcd1234',
@@ -20,7 +22,7 @@ describe('markdown serialization', () => {
       updatedAt: Date.parse('2025-04-11T10:00:00Z'),
     };
 
-    const md = serializeCard(card, rem);
+    const md = await serializeCard({}, card, rem);
     const parsed = parseCardMarkdown(md);
 
     expect(parsed.cardId).toBe(card._id);
@@ -35,7 +37,7 @@ describe('markdown serialization', () => {
     expect(parsed.updated).toBe(new Date(rem.updatedAt!).toISOString());
   });
 
-  it('serializes and parses an SM2 card', () => {
+  it('serializes and parses an SM2 card', async () => {
     const card: SimpleCard = {
       _id: 'card-sm2',
       remId: 'rem-sm2',
@@ -54,7 +56,7 @@ describe('markdown serialization', () => {
       updatedAt: Date.parse('2025-01-02T00:00:00Z'),
     };
 
-    const md = serializeCard(card, rem);
+    const md = await serializeCard({}, card, rem);
     const parsed = parseCardMarkdown(md);
 
     expect(parsed.cardId).toBe(card._id);
@@ -63,5 +65,20 @@ describe('markdown serialization', () => {
     expect(parsed.interval).toBe(card.interval);
     expect(parsed.question).toBe(rem.text);
     expect(parsed.answer).toBe(rem.backText);
+  });
+
+  it('handles images', async () => {
+    (uploadMediaFile as jest.Mock).mockResolvedValue({ ok: true, status: 200, sha: 'sha' });
+    global.fetch = jest.fn().mockResolvedValue({ arrayBuffer: async () => new TextEncoder().encode('img').buffer }) as any;
+
+    const card: SimpleCard = { _id: 'c1', remId: 'r1' };
+    const rem: SimpleRem = { _id: 'r1', text: 'Look ![x](http://ex.com/i.png)', backText: 'A', tags: [], updatedAt: 0 };
+
+    const md = await serializeCard({} as any, card, rem);
+    expect(uploadMediaFile).toHaveBeenCalled();
+    const parsed = parseCardMarkdown(md);
+    expect(parsed.mediaPaths.length).toBe(1);
+    expect(parsed.mediaPaths[0]).toMatch(/^media\//);
+    expect(md).toMatch(/!\[x\]\(media\//);
   });
 });

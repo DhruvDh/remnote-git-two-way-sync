@@ -137,3 +137,63 @@ async function getSettings(plugin: ReactRNPlugin) {
   }
   return { owner, repo, branch, token };
 }
+
+export async function uploadMediaFile(
+  plugin: ReactRNPlugin,
+  path: string,
+  data: ArrayBuffer,
+  sha?: string
+): Promise<{ ok: boolean; status: number; message?: string; sha?: string }> {
+  try {
+    const { owner, repo, branch, token } = await getSettings(plugin);
+    const url = `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(
+      path
+    )}`;
+    const body: any = {
+      message: `Update ${path}`,
+      content: Buffer.from(data).toString('base64'),
+      branch,
+    };
+    if (sha) body.sha = sha;
+    const res = await fetch(url, {
+      method: 'PUT',
+      headers: {
+        Authorization: `token ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      return { ok: false, status: res.status, message: await res.text() };
+    }
+    const json = await res.json();
+    return { ok: true, status: res.status, sha: json.content.sha };
+  } catch (err: any) {
+    return { ok: false, status: 0, message: err.message };
+  }
+}
+
+export async function getBinaryFile(
+  plugin: ReactRNPlugin,
+  path: string
+): Promise<{ ok: boolean; status: number; data?: { content: ArrayBuffer; sha: string }; message?: string }> {
+  try {
+    const { owner, repo, branch, token } = await getSettings(plugin);
+    const res = await fetch(
+      `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(
+        path
+      )}?ref=${branch}`,
+      {
+        headers: { Authorization: `token ${token}` },
+      }
+    );
+    if (!res.ok) {
+      return { ok: false, status: res.status, message: await res.text() };
+    }
+    const json = await res.json();
+    const buffer = Buffer.from(json.content.replace(/\n/g, ''), 'base64');
+    return { ok: true, status: res.status, data: { content: buffer, sha: json.sha } };
+  } catch (err: any) {
+    return { ok: false, status: 0, message: err.message };
+  }
+}
