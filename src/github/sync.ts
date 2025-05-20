@@ -68,6 +68,31 @@ async function createConflictFile(
   await createOrUpdateFile(plugin, path, body, undefined);
 }
 
+async function logConflict(plugin: ReactRNPlugin, cardId: string) {
+  const titleRT = await plugin.richText.parseFromMarkdown('Conflicts');
+  let doc = await plugin.rem.findByName(titleRT, null);
+  if (!doc) {
+    doc = await plugin.rem.createRem();
+    if (doc) {
+      await doc.setText(titleRT);
+    }
+  }
+  if (!doc) return;
+  const children = await doc.getChildrenRem();
+  const existing = await Promise.all(
+    children.map(async (c: any) =>
+      c.text ? await plugin.richText.toString(c.text) : ''
+    )
+  );
+  if (!existing.includes(cardId)) {
+    const child = await plugin.rem.createRem();
+    if (child) {
+      await child.setText(await plugin.richText.parseFromMarkdown(cardId));
+      await child.setParent(doc._id);
+    }
+  }
+}
+
 async function applyParsedToRem(
   plugin: ReactRNPlugin,
   parsed: ParsedCard,
@@ -204,6 +229,11 @@ export async function pushCardById(plugin: ReactRNPlugin, cardId: string) {
             content,
             remote.data.content
           );
+          await logConflict(plugin, cardId);
+          await plugin.app.toast(
+            `Conflict for card ${cardId} requires manual resolution.`,
+            'warning'
+          );
           console.warn(`Conflict for card ${cardId} requires manual resolution.`);
           return;
         }
@@ -339,6 +369,11 @@ export async function pullUpdates(plugin: ReactRNPlugin) {
               id,
               localContent,
               res.data.content
+            );
+            await logConflict(plugin, id);
+            await plugin.app.toast(
+              `Conflict for card ${id} requires manual resolution.`,
+              'warning'
             );
             console.warn(`Conflict for card ${id} requires manual resolution.`);
             continue;
