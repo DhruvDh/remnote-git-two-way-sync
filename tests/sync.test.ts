@@ -18,7 +18,8 @@ function createPlugin() {
     settings: { getSetting: jest.fn((k: string) => settings[k]) },
     card: { findOne: jest.fn(), getAll: jest.fn() },
     richText: {
-      toString: jest.fn(async (t: any) => t),
+      toString: jest.fn(async (t: any) => (typeof t === 'string' ? t : t.text)),
+      toMarkdown: jest.fn(async (t: any) => (typeof t === 'string' ? t : t.text)),
       parseFromMarkdown: jest.fn(async (t: any) => t),
     },
     rem: {
@@ -29,6 +30,7 @@ function createPlugin() {
       getSynced: jest.fn().mockResolvedValue([]),
       setSynced: jest.fn(),
     },
+    app: { toast: jest.fn() },
   } as any;
 }
 
@@ -79,6 +81,7 @@ describe('pushCardById', () => {
       lastRepetitionTime: 50,
       difficulty: undefined,
       stability: undefined,
+      scheduler: 'FSRS',
     };
     const simpleRem = {
       _id: 'rem1',
@@ -87,7 +90,7 @@ describe('pushCardById', () => {
       tags: ['tag1'],
       updatedAt: 100,
     };
-    const content = serializeCard(simpleCard as any, simpleRem as any);
+    const content = await serializeCard(plugin as any, simpleCard as any, simpleRem as any);
     expect(createOrUpdateFile).toHaveBeenCalledWith(plugin, 'cards/card1.md', content, undefined);
     expect(fileShaMap['card1'].sha).toBe('newsha');
   });
@@ -103,7 +106,7 @@ describe('pushCardById', () => {
     createOrUpdateFile.mockResolvedValueOnce({ ok: false, status: 409 });
     const remoteCard = { ...card, nextRepetitionTime: 300, lastRepetitionTime: 70 };
     const remoteRem = { ...rem, text: 'Q2', backText: 'A2', updatedAt: 200 };
-    const remoteContent = serializeCard(remoteCard as any, remoteRem as any);
+    const remoteContent = await serializeCard(plugin as any, remoteCard as any, remoteRem as any);
     getFile.mockResolvedValue({ ok: true, status: 200, data: { content: remoteContent, sha: 'remotesha' } });
 
     await pushCardById(plugin, 'card1');
@@ -126,7 +129,7 @@ describe('pullUpdates', () => {
     listFiles.mockResolvedValue({ ok: true, files: [{ path: 'cards/card1.md', sha: 'new' }] });
     const remoteCard = { ...card };
     const remoteRem = { ...rem };
-    const remoteContent = serializeCard(remoteCard as any, remoteRem as any);
+    const remoteContent = await serializeCard(plugin as any, remoteCard as any, remoteRem as any);
     getFile.mockResolvedValue({ ok: true, status: 200, data: { content: remoteContent, sha: 'new' } });
     createOrUpdateFile.mockResolvedValue({ ok: true, status: 200, sha: 'confsha' });
 

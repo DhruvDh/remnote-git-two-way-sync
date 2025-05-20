@@ -35,12 +35,52 @@ export interface ParsedCard {
   updated?: string | null;
   question: string;
   answer: string;
+  mediaPaths: string[];
 }
 
 /**
  * Serialize a card/rem pair to a markdown string with YAML frontmatter.
  */
-export function serializeCard(card: SimpleCard, rem: SimpleRem): string {
+import { ReactRNPlugin } from '@remnote/plugin-sdk';
+import { uploadMediaFile } from './api';
+import path from 'path';
+
+async function replaceImages(
+  plugin: ReactRNPlugin,
+  text: string
+): Promise<string> {
+  const regex = /!\[(.*?)\]\((.*?)\)/g;
+  let result = '';
+  let last = 0;
+  for (const match of text.matchAll(regex)) {
+    result += text.slice(last, match.index);
+    last = (match.index || 0) + match[0].length;
+    const alt = match[1];
+    const url = match[2];
+    if (url.startsWith('media/')) {
+      result += match[0];
+      continue;
+    }
+    try {
+      const res = await fetch(url);
+      const data = await res.arrayBuffer();
+      const ext = path.extname(url) || '.png';
+      const fname = `${Date.now()}_${Math.random().toString(16).slice(2)}${ext}`;
+      await uploadMediaFile(plugin, `media/${fname}`, data);
+      result += `![${alt}](media/${fname})`;
+    } catch {
+      result += match[0];
+    }
+  }
+  result += text.slice(last);
+  return result;
+}
+
+export async function serializeCard(
+  plugin: ReactRNPlugin,
+  card: SimpleCard,
+  rem: SimpleRem
+): Promise<string> {
   const scheduler = card.scheduler
     ? card.scheduler
     : card.difficulty !== undefined || card.stability !== undefined
@@ -71,8 +111,10 @@ export function serializeCard(card: SimpleCard, rem: SimpleRem): string {
 
   const yaml = require('yaml');
   const front = yaml.stringify(frontmatter).trimEnd();
-  const question = rem.text ?? '';
-  const answer = rem.backText ?? '';
+  let question = rem.text ?? '';
+  let answer = rem.backText ?? '';
+  question = await replaceImages(plugin, question);
+  answer = await replaceImages(plugin, answer);
   return `---\n${front}\n---\n**Q:** ${question}\n\n**A:** ${answer}\n`;
 }
 
@@ -103,6 +145,14 @@ export function parseCardMarkdown(content: string): ParsedCard {
     .join('\n')
     .replace(/^\*\*A:\*\*\s*/, '')
     .trim();
+  const media: string[] = [];
+  const regex = /!\[(.*?)\]\((media\/[^)]+)\)/g;
+  for (const part of [question, answer]) {
+    let m;
+    while ((m = regex.exec(part)) !== null) {
+      media.push(m[2]);
+    }
+  }
   return {
     cardId: front.cardId,
     remId: front.remId,
@@ -117,5 +167,6 @@ export function parseCardMarkdown(content: string): ParsedCard {
     updated: front.updated ?? null,
     question,
     answer,
+    mediaPaths: media,
   };
 }
