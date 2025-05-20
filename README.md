@@ -9,6 +9,7 @@ This plugin synchronizes your RemNote flashcards with a GitHub repository. Each 
 - **Markdown format** – cards are saved as Markdown with YAML front‑matter including FSRS fields.
 - **Conflict handling** – basic conflict resolution with optional policies and conflict files.
 - **Settings** – configure repository, branch, subdirectory and whether auto push/pull is enabled.
+- **Configurable intervals** – set how often auto-pull and retry timers run.
 
 ## Development Setup
 
@@ -38,8 +39,10 @@ The plugin requires a GitHub Personal Access Token (PAT) with access to the repo
    - **GitHub Personal Access Token** – the token you generated.
    - **Repository (owner/repo)** – e.g. `username/flashcards`.
    - **Branch name** – branch used for sync (default `main`).
-   - **Cards subdirectory** – optional folder within the repo for card files.
-   - Enable or disable **auto‑push** and **auto‑pull** as desired.
+- **Cards subdirectory** – optional folder within the repo for card files.
+- Enable or disable **auto‑push** and **auto‑pull** as desired.
+- **Auto Pull Interval (minutes)** – how frequently to check GitHub for updates (default 5).
+- **Retry Interval (minutes)** – how often failed pushes are retried (default 5).
 
 ### Security Notes
 
