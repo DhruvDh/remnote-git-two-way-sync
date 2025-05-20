@@ -32,7 +32,6 @@ function createPlugin() {
       getSynced: jest.fn().mockResolvedValue([]),
       setSynced: jest.fn(),
     },
-    app: { toast: jest.fn() },
   } as any;
 }
 

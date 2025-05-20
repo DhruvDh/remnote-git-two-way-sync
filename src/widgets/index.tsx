@@ -125,15 +125,6 @@ async function onActivate(plugin: ReactRNPlugin) {
 
   await loadShaMap(plugin);
 
-  // A command that inserts text into the editor if focused.
-  await plugin.app.registerCommand({
-    id: 'editor-command',
-    name: 'Editor Command',
-    action: async () => {
-      plugin.editor.insertPlainText('Hello World!');
-    },
-  });
-
   await plugin.app.registerCommand({
     id: 'github-sync-pull',
     name: 'github-sync pull',
