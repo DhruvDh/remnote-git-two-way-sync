@@ -228,15 +228,15 @@ export async function pushCardById(plugin: ReactRNPlugin, cardId: string) {
   const subdir = (await plugin.settings.getSetting<string>('github-subdir')) || '';
   const useSlug = await plugin.settings.getSetting<boolean>('use-slug-filenames');
 
-  let scheduler =
-    (await plugin.settings.getSetting<string>('scheduler')) || undefined;
+  const userChoice = await plugin.settings.getSetting<string>('scheduler');
+  let scheduler = userChoice || undefined;
   if (!scheduler) {
     if ((card as any).difficulty !== undefined || (card as any).stability !== undefined) {
       scheduler = 'FSRS';
     } else if ((card as any).ease !== undefined || (card as any).interval !== undefined) {
       scheduler = 'SM2';
     } else {
-      scheduler = 'FSRS';
+      scheduler = userChoice || 'FSRS';
     }
   }
 

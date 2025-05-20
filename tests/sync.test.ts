@@ -13,6 +13,7 @@ function createPlugin() {
   const settings: Record<string, any> = {
     'github-subdir': 'cards',
     'conflict-policy': 'newer',
+    scheduler: 'FSRS',
   };
   return {
     settings: { getSetting: jest.fn((k: string) => settings[k]) },
@@ -32,7 +33,6 @@ function createPlugin() {
       getSynced: jest.fn().mockResolvedValue([]),
       setSynced: jest.fn(),
     },
-    app: { toast: jest.fn() },
   } as any;
 }
 
