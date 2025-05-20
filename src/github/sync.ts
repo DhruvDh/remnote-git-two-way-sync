@@ -12,6 +12,7 @@ interface ShaEntry {
   sha: string;
   remId: string;
   timestamp: number;
+  slug?: string;
 }
 export let fileShaMap: Record<string, ShaEntry> = {};
 
@@ -34,12 +35,24 @@ export async function loadFailedQueue(plugin: ReactRNPlugin): Promise<string[]> 
   return (await plugin.storage.getSynced<string[]>(FAILED_QUEUE_KEY)) || [];
 }
 
-export async function saveFailedQueue(plugin: ReactRNPlugin, queue: string[]): Promise<void> {
+export async function saveFailedQueue(
+  plugin: ReactRNPlugin,
+  queue: string[]
+): Promise<void> {
   await plugin.storage.setSynced(FAILED_QUEUE_KEY, queue);
 }
 
-function getPath(subdir: string, cardId: string) {
-  return subdir ? `${subdir}/${cardId}.md` : `${cardId}.md`;
+function slugify(text: string) {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 50);
+}
+
+function getPath(subdir: string, cardId: string, slug?: string) {
+  const file = slug ? `${slug}_${cardId}.md` : `${cardId}.md`;
+  return subdir ? `${subdir}/${file}` : file;
 }
 
 async function createConflictFile(
@@ -145,6 +158,7 @@ export async function pushCardById(plugin: ReactRNPlugin, cardId: string) {
   if (!rem) return;
 
   const subdir = (await plugin.settings.getSetting<string>('github-subdir')) || '';
+  const useSlug = await plugin.settings.getSetting<boolean>('use-slug-filenames');
 
   const simpleCard: SimpleCard = {
     _id: card._id,
@@ -170,12 +184,21 @@ export async function pushCardById(plugin: ReactRNPlugin, cardId: string) {
   };
 
   const content = serializeCard(simpleCard, simpleRem);
-  const path = getPath(subdir, cardId);
+  let slug = fileShaMap[cardId]?.slug;
+  if (useSlug && !slug && text) {
+    slug = slugify(text);
+  }
+  const path = getPath(subdir, cardId, slug);
 
   const shaEntry = fileShaMap[cardId];
   const res = await createOrUpdateFile(plugin, path, content, shaEntry?.sha);
   if (res.ok && res.sha) {
-    fileShaMap[cardId] = { sha: res.sha, remId: rem._id, timestamp: Date.now() };
+    fileShaMap[cardId] = {
+      sha: res.sha,
+      remId: rem._id,
+      timestamp: Date.now(),
+      slug,
+    };
     const queue = await loadFailedQueue(plugin);
     const idx = queue.indexOf(cardId);
     if (idx !== -1) {
@@ -221,6 +244,7 @@ export async function pushCardById(plugin: ReactRNPlugin, cardId: string) {
           sha: remote.data.sha,
           remId: rem._id,
           timestamp: Date.now(),
+          slug,
         };
       } else {
         const retry = await createOrUpdateFile(plugin, path, content, remote.data.sha);
@@ -229,6 +253,7 @@ export async function pushCardById(plugin: ReactRNPlugin, cardId: string) {
             sha: retry.sha,
             remId: rem._id,
             timestamp: Date.now(),
+            slug,
           };
         } else {
           const queue = await loadFailedQueue(plugin);
@@ -252,7 +277,7 @@ export async function deleteCardFile(plugin: ReactRNPlugin, cardId: string) {
   const entry = fileShaMap[cardId];
   if (!entry) return;
   const subdir = (await plugin.settings.getSetting<string>('github-subdir')) || '';
-  const path = getPath(subdir, cardId);
+  const path = getPath(subdir, cardId, entry.slug);
   const res = await deleteFile(plugin, path, entry.sha);
   if (res.ok) {
     delete fileShaMap[cardId];
@@ -279,8 +304,12 @@ export async function pullUpdates(plugin: ReactRNPlugin) {
   const seen = new Set<string>();
 
   for (const file of files) {
-    const id = file.path.split('/').pop()?.replace(/\.md$/, '');
+    const filename = file.path.split('/').pop() ?? '';
+    const base = filename.replace(/\.md$/, '');
+    const parts = base.split('_');
+    const id = parts.pop();
     if (!id) continue;
+    const slug = parts.length > 0 ? parts.join('_') : undefined;
     seen.add(id);
     const entry = fileShaMap[id];
     if (!entry || entry.sha !== file.sha) {
@@ -437,7 +466,12 @@ export async function pullUpdates(plugin: ReactRNPlugin) {
         }
       }
 
-      fileShaMap[id] = { sha: file.sha, remId: rem._id, timestamp: Date.now() };
+      fileShaMap[id] = {
+        sha: file.sha,
+        remId: rem._id,
+        timestamp: Date.now(),
+        slug,
+      };
     }
   }
 
