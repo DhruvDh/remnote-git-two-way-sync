@@ -45,6 +45,10 @@ The plugin requires a GitHub Personal Access Token (PAT) with access to the repo
 - **Auto Pull Interval (minutes)** – how frequently to check GitHub for updates (default 5).
 - **Retry Interval (minutes)** – how often failed pushes are retried (default 5).
 - **Scheduler** – choose `FSRS` or `SM2` for card scheduling metadata.
+- **Conflict Policy** – decides how edits are resolved when both GitHub and
+  RemNote modify the same card. `newer` (default) keeps whichever copy was
+  updated most recently, `prefer-github` always uses the version from GitHub and
+  `prefer-remnote` keeps the local changes.
 
 ### Security Notes
 
